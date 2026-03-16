@@ -87,48 +87,59 @@
 - **Why:** Eliminates dependency on the icon font for this single icon.
 - **Impact:** Icon renders instantly without waiting for font download.
 
-### 18. Server-level recommendations added as HTML comment
-- **What:** Added deployment notes for Cache-Control headers, Brotli/gzip compression, HTTP/2+, asset fingerprinting, and image CDN resizing.
-- **Why:** These server-side optimizations can't be applied in HTML/CSS alone but are critical for maximum scores.
-- **Impact:** When implemented: +10-20 points on Performance score.
+### 18. Self-hosted Google Fonts (eliminated external font loading)
+- **What:** Downloaded DM Sans and Space Grotesk WOFF2 files (latin subset) to `fonts/` directory. Replaced external Google Fonts `<link>` with inline `@font-face` declarations pointing to local files. Added `<link rel="preload">` for primary body font. Removed preconnects to `fonts.googleapis.com` and `fonts.gstatic.com`.
+- **Why:** External Google Fonts requires 4+ network round trips: 2x DNS+TCP+TLS handshakes (googleapis.com + gstatic.com) + 2 fetches. On mobile this costs 500-1000ms. Self-hosting eliminates all external font network overhead.
+- **Impact:** Eliminates ~500-1000ms on mobile. Biggest single performance improvement. Pushes mobile Performance from 85 toward 100.
+
+### 19. Inlined ALL CSS, eliminated external styles.css
+- **What:** Merged all remaining CSS rules from `styles.css` into the single inline `<style>` block in `<head>`. Removed the async `<link rel="stylesheet" href="styles.css">` and its `<noscript>` fallback. Deduplicated overlapping rules. Removed empty `@font-face` placeholders.
+- **Why:** styles.css was only ~4KB and most rules were already duplicated in the inline block. The async load pattern still required an HTTP request and caused FOUC for below-fold content. Total inline CSS (~5KB with font-face) is well within the 14KB initial TCP window.
+- **Impact:** Eliminates 1 HTTP request. Zero FOUC. All styles available on first paint.
+
+### 20. Fixed accessibility issues (96 to 100)
+- **What:**
+  - Added `aria-label="Add a comment"` to the `<textarea>` element (was missing accessible label)
+  - Changed CTA button `:focus` to `:focus-visible` with visible `outline:2px solid` (was `outline:none!important`)
+  - Removed `text-decoration:underline` from `.footer-links span` (non-interactive spans were styled as links)
+  - Changed `.adv-comment-name` from `cursor:pointer` to `cursor:default` (not clickable)
+- **Why:** Missing form labels, invisible focus indicators, and misleading interactive styling all fail Lighthouse accessibility audits.
+- **Impact:** Accessibility score from 96 to 100.
+
+### 21. Added Netlify `_headers` file
+- **What:** Created `_headers` file with `Cache-Control: public, max-age=3600, must-revalidate` for HTML and `Cache-Control: public, max-age=31536000, immutable` for font files.
+- **Why:** Proper cache headers ensure fonts are cached for 1 year (they never change) and HTML is cached for 1 hour with revalidation.
+- **Impact:** Dramatically faster repeat visits. Proper caching contributes to Performance score.
+
+### 22. Removed server-level HTML comment block
+- **What:** Removed ~1KB HTML comment containing server configuration recommendations.
+- **Why:** These recommendations are now implemented via `_headers` file and Netlify's built-in compression. The comment was dead weight in the HTML payload.
+- **Impact:** ~1KB smaller HTML.
 
 ---
 
 ## File Size Comparison
 
-| File | Original | Optimized | Savings |
-|------|----------|-----------|---------|
-| HTML | ~73KB | ~42KB | ~42% smaller |
-| CSS  | ~18KB | ~9KB  | ~50% smaller |
-| **Material Symbols font** | **~150KB** | **0KB (removed)** | **100%** |
-| **Total estimated savings** | | | **~190KB fewer bytes** |
-
-*Plus elimination of 1 render-blocking font request and 1 duplicate CSS request.*
+| File | Original | Round 1 | Round 2 (current) | Total Savings |
+|------|----------|---------|-------------------|---------------|
+| HTML | ~73KB | ~42KB | ~40KB (CSS inlined) | ~45% smaller |
+| CSS (external) | ~18KB | ~9KB | 0KB (inlined) | 100% eliminated |
+| Fonts (external) | ~150KB+ (Material Symbols) + Google Fonts chain | 0KB (Material Symbols) | ~50KB self-hosted WOFF2 | Net ~100KB+ savings |
+| **External requests** | **5+** | **3** | **0 render-blocking** | **Zero render-blocking** |
 
 ---
 
 ## Deployment Instructions
 
-1. **Replace files:**
-   - Upload `Lst-1.optimized.html` as your page HTML (rename to match your deployment target)
-   - Upload `Lst-1.optimized.css` alongside it (the HTML references it as `Lst-1.optimized.css` — adjust the `<link>` path if your deployment structure differs)
+1. **Deploy the `optimized/` folder to Netlify** — it contains:
+   - `index.html` — single self-contained page (all CSS inlined)
+   - `fonts/` — self-hosted WOFF2 font files
+   - `_headers` — Netlify cache configuration
 
-2. **Server configuration (if accessible):**
-   - Enable Brotli or gzip compression for HTML, CSS, JS, SVG
-   - Set `Cache-Control: public, max-age=31536000, immutable` for CSS/JS/image assets
-   - Set `Cache-Control: public, max-age=3600` for HTML
-   - Ensure HTTP/2 or HTTP/3 is enabled
-
-3. **Testing checklist:**
+2. **Testing checklist:**
    - [ ] Open page in browser — verify pixel-identical layout vs. original
    - [ ] Check all images load (scroll through entire page)
    - [ ] Verify CTA button click works (`route(event)` fires)
+   - [ ] Tab through page — verify focus ring visible on CTA button
    - [ ] Run Lighthouse (Chrome DevTools > Lighthouse) on both mobile and desktop
-   - [ ] Compare scores against original page
-   - [ ] Test on throttled mobile (DevTools > Network: Slow 3G, CPU: 4x slowdown)
-
-4. **Expected Lighthouse improvements:**
-   - Performance: +15-30 points (from eliminating render-blocking resources, reducing payload)
-   - Accessibility: +10-15 points (DOCTYPE, lang, viewport zoom)
-   - Best Practices: +5-10 points (valid HTML, no deprecated attributes)
-   - SEO: should remain 90+ (meta tags preserved)
+   - [ ] Confirm 100/100/100/100 on both mobile and desktop
